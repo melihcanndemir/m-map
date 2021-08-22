@@ -1,5 +1,6 @@
 # M - MAP is an easy port scan tool
 # Created by Melih Can
+# Version 1.0
 # Date 21/08/2021
 
 from colorama import Fore, Back, Style
@@ -9,18 +10,18 @@ import pyfiglet
 import sys
 import socket
 import os
-import time
 
 os.system("cls")
 colorama.init()
 
+# Add Banner
 ascii_banner = pyfiglet.figlet_format("M - MAP")
 print(Fore.LIGHTBLUE_EX)
 print(ascii_banner)
 print(Fore.LIGHTGREEN_EX)
 print("M - MAP is an easy port scan tool")
 print(Fore.LIGHTWHITE_EX)
-
+# Most Used Ports
 common_ports = {
  
 	'21': 'FTP',
@@ -52,7 +53,7 @@ common_ports = {
 	'8443': 'PLESK',
 	'10000': 'VIRTUALMIN/WEBMIN'
 }
-
+# Get known services
 def get_service(ports):
     ports = str(ports)
     if ports in common_ports:
@@ -72,6 +73,7 @@ except:
 # Defining a target
 # translate hostname to IPv4
 target = socket.gethostbyname(target)
+# Gets the current date
 now = datetime.now()
 
 # Add Banner
@@ -88,7 +90,7 @@ try:
     for port in range(1,value):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         socket.setdefaulttimeout(timeout)
-        # returns an error indicator
+        # Attempts to connect to target ports
         result = s.connect_ex((target,port))
         if result == 0:
             service = get_service(port)
@@ -96,15 +98,15 @@ try:
                 service = "UNKNOWN SERVICE"
             print(f"      {port}        OPEN       {service}")
         s.close()
-
+# if uses Ctrl+C  etc. show this  
 except KeyboardInterrupt:
     print("\n Exitting Program !!!!")
     sys.exit(1)
-
+# This shows your given hostname is invalid
 except socket.gaierror:
     print("\n Hostname Could Not Be Resolved !!!!")
     sys.exit(1)
-
+# if Server not responding show this
 except socket.error:
     print("\n Server not responding !!!!")
     sys.exit(1)
