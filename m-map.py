@@ -64,8 +64,13 @@ try:
     timeout = float(input("Port Scanner Timeout: "))
     target = input("Enter the target: ")
 
-except:
-    print("Error !!! Please enter the true value.")
+except TypeError:
+    print("\n Error !!! Please enter the true value.")
+    sys.exit()
+
+except KeyboardInterrupt:
+    print("\n KeyboardInterrupt Error")
+    print("Exiting...")
     sys.exit()
 
 # Defining a target
