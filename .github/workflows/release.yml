@@ -65,8 +65,6 @@ jobs:
             --add-data "%FONT_PATH%\fonts;pyfiglet/fonts" ^
             m_map\m_map.py
 
-          move dist\* dist\
-
         env:
           ASSET_NAME: ${{ matrix.asset_name }}
 
@@ -79,10 +77,9 @@ jobs:
           pyinstaller \
             --onefile \
             --name "${{ matrix.asset_name }}" \
+            --distpath dist \
             --add-data "$FONT_PATH/fonts:pyfiglet/fonts" \
             m_map/m_map.py
-
-          mv dist/* dist/
 
       # 7) dist içeriğini listele
       - name: List Build Directory
@@ -106,7 +103,7 @@ jobs:
 
             ### Changes
             - Enhanced service detection with banner grabbing
-            - Improved test coverage (~X%)
+            - Improved test coverage (~50%)
             - Added new network testing capabilities
             - Bug fixes and improvements
 
