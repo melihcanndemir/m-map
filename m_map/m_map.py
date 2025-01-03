@@ -3,17 +3,6 @@
 # Version 1.6.0
 # Date 21/08/2021
 
-__all__ = [
-    'get_service',
-    'ping_scan',
-    'get_optimal_thread_count',
-    'scan_port',
-    'network_scan',
-    'udp_scan',
-    'get_service_banner',
-    'detect_os'
-]
-
 from colorama import Fore
 from datetime import datetime
 import colorama
@@ -364,6 +353,220 @@ def get_font_path():
     except:
         return None
 
+def validate_ip(ip_address: str) -> bool:
+    """IP adresinin geçerli olup olmadığını kontrol eder."""
+    try:
+        parts = ip_address.split('.')
+        if len(parts) != 4:
+            return False
+        return all(0 <= int(part) <= 255 for part in parts)
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+def validate_subnet(subnet: str) -> bool:
+    """Subnet'in geçerli olup olmadığını kontrol eder."""
+    try:
+        if '/' not in subnet:
+            return False
+        ip, mask = subnet.split('/')
+        if not validate_ip(ip):
+            return False
+        mask = int(mask)
+        return 0 <= mask <= 32
+    except (ValueError, AttributeError):
+        return False
+
+def get_service_name(port: int) -> str:
+    """Port numarasına göre servis ismini döndürür."""
+    common_ports = {
+        20: "ftp-data",
+        21: "ftp",
+        22: "ssh",
+        23: "telnet",
+        25: "smtp",
+        53: "dns",
+        80: "http",
+        110: "pop3",
+        143: "imap",
+        443: "https",
+        3306: "mysql",
+        5432: "postgresql"
+    }
+    return common_ports.get(port, "unknown")
+
+def parse_port_range(port_range: str) -> list:
+    """Port aralığını parse eder ve port listesi döndürür."""
+    try:
+        ports = []
+        for part in port_range.split(','):
+            if '-' in part:
+                start, end = map(int, part.split('-'))
+                ports.extend(range(start, end + 1))
+            else:
+                ports.append(int(part))
+        return sorted(ports)
+    except ValueError:
+        raise ValueError("Geçersiz port aralığı formatı")
+
+def scan_port(target: str, port: int, timeout: int = 1) -> bool:
+    """
+    Belirtilen portu tarar.
+    
+    Args:
+        target: Hedef IP adresi
+        port: Taranacak port
+        timeout: Bağlantı zaman aşımı (saniye)
+    """
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((target, port))
+        sock.close()
+        return result == 0
+    except:
+        return False
+
+def resolve_host(hostname: str) -> str:
+    """
+    Hostname'i IP adresine çözümler.
+    
+    Args:
+        hostname: Çözümlenecek hostname
+    Returns:
+        str: IP adresi veya boş string (çözümlenemezse)
+    """
+    try:
+        return socket.gethostbyname(hostname)
+    except socket.gaierror:
+        return ""
+
+def get_banner(target: str, port: int, timeout: int = 2) -> str:
+    """
+    Belirtilen port üzerinden banner bilgisini alır.
+    
+    Args:
+        target: Hedef IP adresi
+        port: Bağlanılacak port
+        timeout: Zaman aşımı süresi (saniye)
+    Returns:
+        str: Banner bilgisi veya boş string
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect((target, port))
+            banner = sock.recv(1024)
+            return banner.decode('utf-8', errors='ignore').strip()
+    except (socket.timeout, socket.error):
+        return ""
+
+def detect_service(target: str, port: int) -> str:
+    """
+    Port üzerinde çalışan servisi tespit eder.
+    
+    Args:
+        target: Hedef IP adresi
+        port: Kontrol edilecek port
+    Returns:
+        str: Tespit edilen servis adı ve versiyonu
+    """
+    banner = get_banner(target, port)
+    
+    # HTTP/HTTPS kontrolü
+    if "HTTP" in banner:
+        service = "HTTP"
+        if "nginx" in banner.lower():
+            service += " (nginx)"
+        elif "apache" in banner.lower():
+            service += " (Apache)"
+        return service
+    
+    # SSH kontrolü
+    if "SSH" in banner:
+        service = "SSH"
+        if "OpenSSH" in banner:
+            version = banner.split("OpenSSH_")[1].split()[0]
+            service += f" (OpenSSH {version})"
+        return service
+    
+    # Bilinmeyen servis
+    return "Unknown"
+
+def show_about():
+    """Display program information and check for updates"""
+    version_info = {
+        'name': 'M-MAP',
+        'version': '1.6.0',
+        'author': 'Melih Can',
+        'email': 'melihcandemir@protonmail.com',
+        'github': 'https://github.com/melihcan1376/m-map',
+        'license': 'MIT',
+        'year': '2025',
+        'description': 'Advanced Port Scanner and Network Mapping Tool'
+    }
+
+    # Stil için ANSI renk kodları
+    BLUE = Fore.LIGHTBLUE_EX
+    GREEN = Fore.LIGHTGREEN_EX
+    WHITE = Fore.LIGHTWHITE_EX
+    RESET = Fore.RESET
+
+    print(f"\n{BLUE}{'='*50}{RESET}")
+    
+    # ASCII banner'ı ekle
+    try:
+        ascii_banner = pyfiglet.figlet_format("M - MAP")
+    except:
+        ascii_banner = r"""
+ __  __   __  __   _    ____  
+|  \/  | |  \/  | / \  |  _ \ 
+| |\/| | | |\/| |/ _ \ | |_) |
+| |  | | | |  | / ___ \|  __/ 
+|_|  |_| |_|  |_/_/   \_\_|    
+        """
+    print(f"{GREEN}{ascii_banner}{RESET}")
+    
+    print(f"{GREEN}{version_info['name']}{RESET} - {version_info['description']}")
+    print(f"\n{WHITE}Version Information:{RESET}")
+    print(f"  • Version: {version_info['version']}")
+    print(f"  • Release Year: {version_info['year']}")
+    print(f"  • License: {version_info['license']}")
+    
+    print(f"\n{WHITE}Developer:{RESET}")
+    print(f"  • {version_info['author']}")
+    print(f"  • {version_info['email']}")
+    print(f"  • {version_info['github']}")
+    
+    print(f"\n{WHITE}Features:{RESET}")
+    print("  • TCP/UDP Port Scanning")
+    print("  • Service Detection")
+    print("  • OS Detection")
+    print("  • Network Scanning")
+    print("  • Banner Grabbing")
+    print("  • Multi-threading Support")
+    print("  • Export (TXT/JSON/HTML)")
+    
+    print(f"\n{WHITE}Checking for updates...{RESET}")
+    try:
+        current_version = version_info['version']
+        response = requests.get(
+            "https://api.github.com/repos/melihcan1376/m-map/releases/latest",
+            timeout=5
+        )
+        latest_version = response.json()["tag_name"]
+        
+        if latest_version > current_version:
+            print(f"{GREEN}New version available!{RESET}")
+            print(f"Current: {current_version}")
+            print(f"Latest: {latest_version}")
+            print(f"Update at: {version_info['github']}/releases")
+        else:
+            print(f"{GREEN}You have the latest version!{RESET}")
+    except Exception as e:
+        print(f"{Fore.RED}Could not check for updates: Network error{RESET}")
+    
+    print(f"\n{BLUE}{'='*50}{RESET}")
+
 if __name__ == "__main__":
     args = parse_arguments()
     
@@ -407,7 +610,7 @@ if __name__ == "__main__":
                 ascii_banner = pyfiglet.figlet_format("M - MAP")
             except:
                 # Her şey başarısız olursa basit bir banner kullan
-                ascii_banner = """
+                ascii_banner = r"""
  __  __   __  __   _    ____  
 |  \/  | |  \/  | / \  |  _ \ 
 | |\/| | | |\/| |/ _ \ | |_) |
@@ -738,17 +941,7 @@ if __name__ == "__main__":
             print("10 - Network Scan: Scan local network")
 
         elif choose == "12":  # About
-            print("-"*50)
-            print("M - MAP is an easy port scan tool")
-            print(" ")
-            print("Created by Melih Can")    
-            print("Version 1.5 Date 21/08/2021")
-            print("-"*50)
-            print("My E-mail: Melihcan1376@gmail.com")
-            print("-"*50)
-            
-            # Check for updates
-            check_for_updates()
+            show_about()
 
         elif choose == "13":  # Exit
             print("\nExiting program...")

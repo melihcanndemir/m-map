@@ -1,5 +1,5 @@
 import pytest
-from m_map import get_service, get_service_banner, detect_os
+from m_map.m_map import get_service, get_service_banner, detect_os
 from unittest.mock import patch, MagicMock
 
 def test_service_detection():
