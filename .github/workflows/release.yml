@@ -15,9 +15,11 @@ jobs:
           - os: windows-latest
             asset_name: m-map-windows.exe
             list_command: dir
+            separator: ";"
           - os: ubuntu-latest
             asset_name: m-map-linux
             list_command: ls -la
+            separator: ":"
 
     steps:
       - uses: actions/checkout@v2
@@ -33,11 +35,20 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller
+      - name: Get Font Path
+        id: font-path
         run: |
-          # Font dosyalarının yolunu bul
-          python -c "import pyfiglet; import os; print(os.path.dirname(pyfiglet.__file__))"
-          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$(python -c 'import pyfiglet; import os; print(os.path.join(os.path.dirname(pyfiglet.__file__), "fonts"))'${{ runner.os == 'Windows' && ';' || ':' }}pyfiglet/fonts" m-map.py
+          echo "FONT_PATH=$(python -c "import pyfiglet, os; print(os.path.join(os.path.dirname(pyfiglet.__file__), 'fonts'))")" >> $GITHUB_ENV
+
+      - name: Build with PyInstaller (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$env:FONT_PATH;pyfiglet/fonts" m-map.py
+
+      - name: Build with PyInstaller (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "${{ env.FONT_PATH }}:pyfiglet/fonts" m-map.py
 
       - name: List Build Directory
         run: |
