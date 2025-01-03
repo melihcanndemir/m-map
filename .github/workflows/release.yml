@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     tags:
-      - "v*" # v1.0.0 gibi tag'ler için
+      - "v*"
 
 jobs:
   build:
@@ -14,10 +14,8 @@ jobs:
         include:
           - os: windows-latest
             asset_name: m-map-windows.exe
-            asset_content_type: application/vnd.microsoft.portable-executable
           - os: ubuntu-latest
             asset_name: m-map-linux
-            asset_content_type: application/x-executable
 
     steps:
       - uses: actions/checkout@v2
@@ -33,18 +31,26 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller (Windows)
-        if: matrix.os == 'windows-latest'
-        run: pyinstaller --onefile --name m-map m-map.py
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --onefile --name ${{ matrix.asset_name }} m-map.py
+          ls dist/  # Debug için dosyaları listele
 
-      - name: Build with PyInstaller (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: pyinstaller --onefile --name m-map m-map.py
+      - name: List Build Directory
+        run: |
+          echo "Listing dist directory:"
+          ls -la dist/
+          echo "Current directory:"
+          pwd
 
-      - name: Upload Release Asset
+      - name: Create Release
         uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            dist/${{ matrix.asset_name }}
+            dist/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
