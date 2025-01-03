@@ -344,11 +344,12 @@ def get_font_path():
         import os
         if getattr(sys, 'frozen', False):
             # PyInstaller ile paketlenmiş
-            return os.path.join(sys._MEIPASS, 'pyfiglet', 'fonts')
+            base_path = sys._MEIPASS
         else:
             # Normal Python
             import pyfiglet
-            return os.path.join(os.path.dirname(pyfiglet.__file__), 'fonts')
+            base_path = os.path.dirname(pyfiglet.__file__)
+        return os.path.join(base_path, 'pyfiglet', 'fonts')
     except:
         return None
 
@@ -383,7 +384,25 @@ if __name__ == "__main__":
     # Main loop
     while True:
         # Add Banner
-        ascii_banner = pyfiglet.figlet_format("M - MAP", font_dir=get_font_path())
+        try:
+            # Önce varsayılan font ile dene
+            ascii_banner = pyfiglet.figlet_format("M - MAP")
+        except:
+            try:
+                # Hata alırsa özel font yolunu kullan
+                font_path = get_font_path()
+                if font_path:
+                    pyfiglet.FigletFont.DEFAULT_FONT_PATH = font_path
+                ascii_banner = pyfiglet.figlet_format("M - MAP")
+            except:
+                # Her şey başarısız olursa basit bir banner kullan
+                ascii_banner = """
+ __  __   __  __   _    ____  
+|  \/  | |  \/  | / \  |  _ \ 
+| |\/| | | |\/| |/ _ \ | |_) |
+| |  | | | |  | / ___ \|  __/ 
+|_|  |_| |_|  |_/_/   \_\_|    
+                """
         print(Fore.LIGHTBLUE_EX)
         print(ascii_banner)
         print(Fore.LIGHTGREEN_EX)
