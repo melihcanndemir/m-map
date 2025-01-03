@@ -337,6 +337,21 @@ def get_optimal_thread_count():
     """Get optimal thread count based on CPU cores"""
     return min(200, os.cpu_count() * 4)  # Maximum 200 threads
 
+# Pyfiglet font yolu için
+def get_font_path():
+    try:
+        import sys
+        import os
+        if getattr(sys, 'frozen', False):
+            # PyInstaller ile paketlenmiş
+            return os.path.join(sys._MEIPASS, 'pyfiglet', 'fonts')
+        else:
+            # Normal Python
+            import pyfiglet
+            return os.path.join(os.path.dirname(pyfiglet.__file__), 'fonts')
+    except:
+        return None
+
 if __name__ == "__main__":
     args = parse_arguments()
     
@@ -368,7 +383,7 @@ if __name__ == "__main__":
     # Main loop
     while True:
         # Add Banner
-        ascii_banner = pyfiglet.figlet_format("M - MAP")
+        ascii_banner = pyfiglet.figlet_format("M - MAP", font_dir=get_font_path())
         print(Fore.LIGHTBLUE_EX)
         print(ascii_banner)
         print(Fore.LIGHTGREEN_EX)

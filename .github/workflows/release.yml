@@ -34,7 +34,10 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile --name ${{ matrix.asset_name }} m-map.py
+        run: |
+          # Font dosyalarının yolunu bul
+          python -c "import pyfiglet; import os; print(os.path.dirname(pyfiglet.__file__))"
+          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$(python -c 'import pyfiglet; import os; print(os.path.join(os.path.dirname(pyfiglet.__file__), "fonts"))'${{ runner.os == 'Windows' && ';' || ':' }}pyfiglet/fonts" m-map.py
 
       - name: List Build Directory
         run: |
