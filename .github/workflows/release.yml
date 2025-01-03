@@ -14,8 +14,10 @@ jobs:
         include:
           - os: windows-latest
             asset_name: m-map-windows.exe
+            list_command: dir
           - os: ubuntu-latest
             asset_name: m-map-linux
+            list_command: ls -la
 
     steps:
       - uses: actions/checkout@v2
@@ -32,16 +34,14 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --name ${{ matrix.asset_name }} m-map.py
-          ls dist/  # Debug için dosyaları listele
+        run: pyinstaller --onefile --name ${{ matrix.asset_name }} m-map.py
 
       - name: List Build Directory
         run: |
           echo "Listing dist directory:"
-          ls -la dist/
+          ${{ matrix.list_command }} dist
           echo "Current directory:"
-          pwd
+          cd
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
