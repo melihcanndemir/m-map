@@ -82,8 +82,6 @@ jobs:
             --add-data "$FONT_PATH/fonts:pyfiglet/fonts" \
             m_map/m_map.py
 
-          mv dist/* dist/
-
       # 7) dist içeriğini listele
       - name: List Build Directory
         run: |
