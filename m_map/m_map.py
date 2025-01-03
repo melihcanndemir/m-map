@@ -1,7 +1,18 @@
 # M - MAP is an easy port scan tool
 # Created by Melih Can
-# Version 1.5
+# Version 1.6.0
 # Date 21/08/2021
+
+__all__ = [
+    'get_service',
+    'ping_scan',
+    'get_optimal_thread_count',
+    'scan_port',
+    'network_scan',
+    'udp_scan',
+    'get_service_banner',
+    'detect_os'
+]
 
 from colorama import Fore
 from datetime import datetime
