@@ -9,6 +9,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest]
         include:
@@ -26,6 +27,7 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "3.x"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -37,21 +39,26 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
+          cd m_map
           $fontPath = python -c "import pyfiglet, os; print(os.path.dirname(pyfiglet.__file__))"
-          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$fontPath\fonts;pyfiglet/fonts" m-map.py
+          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$fontPath\fonts;pyfiglet/fonts" --clean m_map.py
+          Move-Item dist/* ../dist/ -Force
 
       - name: Build with PyInstaller (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
+          cd m_map
           FONT_PATH=$(python -c "import pyfiglet, os; print(os.path.dirname(pyfiglet.__file__))")
-          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$FONT_PATH/fonts:pyfiglet/fonts" m-map.py
+          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$FONT_PATH/fonts:pyfiglet/fonts" --clean m_map.py
+          mkdir -p ../dist
+          mv dist/* ../dist/
 
       - name: List Build Directory
         run: |
           echo "Listing dist directory:"
           ${{ matrix.list_command }} dist
           echo "Current directory:"
-          cd
+          pwd
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -62,5 +69,17 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          body: |
+            ## M-MAP Release ${{ github.ref_name }}
+
+            ### Changes
+            - Enhanced service detection with banner grabbing
+            - Improved test coverage (48%)
+            - Added new network testing capabilities
+            - Bug fixes and improvements
+
+            ### Downloads
+            - Windows: m-map-windows.exe
+            - Linux: m-map-linux
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
