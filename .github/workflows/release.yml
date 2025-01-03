@@ -34,31 +34,44 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.x"
+          python-version: "3.12"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: cmd
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
+          python -m pip install --upgrade pip --no-cache-dir
+          pip install -r requirements.txt --no-cache-dir
+          pip install pyinstaller --no-cache-dir
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python -m pip install --upgrade pip --no-cache-dir
+          pip install -r requirements.txt --no-cache-dir
+          pip install pyinstaller --no-cache-dir
+
+      - name: Create dist directory
+        run: mkdir -p dist
 
       - name: Build with PyInstaller (Windows)
         if: matrix.os == 'windows-latest'
-        shell: pwsh
+        shell: cmd
         run: |
           cd m_map
-          $fontPath = python -c "import pyfiglet, os; print(os.path.dirname(pyfiglet.__file__))"
-          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$fontPath\fonts;pyfiglet/fonts" --clean m_map.py
-          Move-Item dist/* ../dist/ -Force
+          for /f "tokens=*" %%i in ('python -c "import pyfiglet, os; print(os.path.dirname(pyfiglet.__file__))"') do set FONT_PATH=%%i
+          pyinstaller --onefile --name %ASSET_NAME% --add-data "%FONT_PATH%\fonts;pyfiglet/fonts" --clean m_map.py
+          move /Y dist\* ..\dist\
+        env:
+          ASSET_NAME: ${{ matrix.asset_name }}
 
       - name: Build with PyInstaller (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           cd m_map
           FONT_PATH=$(python -c "import pyfiglet, os; print(os.path.dirname(pyfiglet.__file__))")
-          pyinstaller --onefile --name ${{ matrix.asset_name }} --add-data "$FONT_PATH/fonts:pyfiglet/fonts" --clean m_map.py
-          mkdir -p ../dist
+          pyinstaller --onefile --name "${{ matrix.asset_name }}" --add-data "$FONT_PATH/fonts:pyfiglet/fonts" --clean m_map.py
           mv dist/* ../dist/
 
       - name: List Build Directory
@@ -72,8 +85,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            dist/*
+          files: dist/*
           draft: false
           prerelease: false
           generate_release_notes: true
