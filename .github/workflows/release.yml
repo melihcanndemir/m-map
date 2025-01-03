@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     tags:
-      - "v*" # v1.0, v2.3 gibi tag'lerle pushlanınca tetiklenecek
+      - "v*" # v1.0, v1.1 gibi tag'lerle pushlanınca tetiklenecek
 
 permissions:
   contents: write
@@ -25,66 +25,66 @@ jobs:
             list_command: ls -la
 
     steps:
-      # 1) Kodun checkout edilmesi
+      # 1) Kodu çekme
       - name: Checkout code
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2) Python kurulumu
+      # 2) Python kurulum
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.12"
           cache: "pip"
 
-      # 3) Bağımlılıkların yüklenmesi
+      # 3) Ortak bağımlılıkları yükleme (Her iki OS için de yeterli)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip --no-cache-dir
           pip install -r requirements.txt --no-cache-dir
           pip install pyinstaller --no-cache-dir
 
-      # 4) Dist klasörünü oluştur
+      # 4) dist klasörünü oluştur
       - name: Create dist directory
         run: mkdir -p dist
 
-      # 5) Windows için PyInstaller Build
+      # 5) Windows için PyInstaller
       - name: Build with PyInstaller (Windows)
         if: matrix.os == 'windows-latest'
         shell: cmd
         run: |
-          REM Pyfiglet'in fonts klasör yolunu bulalım
+          rem Pyfiglet'in font klasör yolunu alalım
           for /f "tokens=*" %%i in ('python -c "import pyfiglet, os; print(os.path.dirname(pyfiglet.__file__))"') do set FONT_PATH=%%i
 
-          REM Ana script dosyası = m_map/m_map.py
-          pyinstaller --onefile ^
-                      --name %ASSET_NAME% ^
-                      --add-data "%FONT_PATH%\fonts;pyfiglet/fonts" ^
-                      --clean m_map\m_map.py
+          rem Ana script = m_map/m_map.py
+          pyinstaller ^
+            --onefile ^
+            --name %ASSET_NAME% ^
+            --add-data "%FONT_PATH%\fonts;pyfiglet/fonts" ^
+            m_map\m_map.py
 
-          REM Derlenen dosyaları dist klasörüne alalım
-          move /Y dist\* dist\
+          move dist\* dist\
 
         env:
           ASSET_NAME: ${{ matrix.asset_name }}
 
-      # 6) Linux için PyInstaller Build
+      # 6) Ubuntu için PyInstaller
       - name: Build with PyInstaller (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           FONT_PATH=$(python -c "import pyfiglet, os; print(os.path.dirname(pyfiglet.__file__))")
 
-          # Ana script dosyası = m_map/m_map.py
-          pyinstaller --onefile \
-                      --name "${{ matrix.asset_name }}" \
-                      --add-data "$FONT_PATH/fonts:pyfiglet/fonts" \
-                      --clean m_map/m_map.py
+          pyinstaller \
+            --onefile \
+            --name "${{ matrix.asset_name }}" \
+            --add-data "$FONT_PATH/fonts:pyfiglet/fonts" \
+            m_map/m_map.py
 
           mv dist/* dist/
 
-      # 7) Derlenen dosyaları list
+      # 7) dist içeriğini listele
       - name: List Build Directory
         run: |
           echo "Listing dist directory:"
@@ -92,7 +92,7 @@ jobs:
           echo "Current directory:"
           pwd
 
-      # 8) Release oluşturma
+      # 8) GitHub Release Oluşturma
       - name: Create Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -106,7 +106,7 @@ jobs:
 
             ### Changes
             - Enhanced service detection with banner grabbing
-            - Improved test coverage (~50%)
+            - Improved test coverage (~X%)
             - Added new network testing capabilities
             - Bug fixes and improvements
 
