@@ -10,6 +10,16 @@ import pyfiglet
 import sys
 import socket
 import os
+import threading
+from queue import Queue
+import time
+import struct
+import subprocess
+import json
+import requests
+import argparse
+import platform
+import nmap
 
 colorama.init()
 
@@ -46,140 +56,660 @@ common_ports = {
 	'10000': 'VIRTUALMIN/WEBMIN'
 }
 
-while True:
-    # Add Banner
-    ascii_banner = pyfiglet.figlet_format("M - MAP")
-    print(Fore.LIGHTBLUE_EX)
-    print(ascii_banner)
-    print(Fore.LIGHTGREEN_EX)
-    print("M - MAP is an easy port scan tool")
-    print(Fore.LIGHTWHITE_EX)
-    # Get known services
-    def get_service(ports):
-        ports = str(ports)
-        if ports in common_ports:
-            return common_ports[ports]
-        else:
-            return 0
+# Quick scan ports
+quick_scan_ports = [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 
+                   993, 995, 1723, 3306, 3389, 5900, 8080]
 
-    choose_banner = '''
-    1 - Single Port Scan
-    2 - Multi Port Scan
-    3 - Help
-    4 - About
-    5 - Exit
-    '''
-    print(choose_banner)
+def scan_port(target, ports, queue, progress_queue):
+    if not ports:
+        print("Port list is empty!")
+        return
+        
+    # Her 1000 portta bir queue'yu boşalt
+    results_buffer = []
+    for port in ports:
+        try:
+            if not isinstance(port, int) or port < 1 or port > 65535:
+                print(f"Invalid port number: {port}")
+                continue
+                
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.015)
+            result = s.connect_ex((target, port))
+            if result == 0:
+                service = get_service(str(port))
+                if not service:
+                    service = "UNKNOWN SERVICE"
+                results_buffer.append((port, service))
+                if len(results_buffer) >= 1000:
+                    for r in results_buffer:
+                        queue.put(r)
+                    results_buffer.clear()
+            s.close()
+            progress_queue.put(1)
+        except:
+            progress_queue.put(1)
+    
+    # Kalan sonuçları gönder
+    for r in results_buffer:
+        queue.put(r)
+
+def save_results(target, results, scan_time):
+    filename = f"scan_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    with open(filename, "w") as f:
+        f.write(f"M-MAP Port Scan Report\n")
+        f.write(f"Scanned Target: {target}\n")
+        f.write(f"Scan Time: {scan_time}\n")
+        f.write("-" * 50 + "\n")
+        f.write("PORT      STATE      SERVICE\n")
+        for port, service in sorted(results):
+            f.write(f"{port:<10}OPEN       {service}\n")
+    return filename
+
+def get_service_banner(ip, port):
     try:
-        choose = input("Choose option: ")
-    
-    except KeyboardInterrupt:
-        print("\n Exitting Program !!!!")
-        sys.exit(1)
-    
-    except TypeError:
-            print("\n Error !!! Please enter the true value.")
-            sys.exit(1)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        s.connect((ip, port))
+        banner = s.recv(1024).decode().strip()
+        s.close()
+        return banner
+    except:
+        return None
 
-    if choose == "1":
-        ip = input("Enter the IP Address: ")
-        port = int(input("Enter the Port Number: "))
-        sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        print("-"*50)
-        if sock.connect_ex((ip,port)):
-            print("Port ",port, "is closed")
-        else:
-            service = get_service(port)
-            if not service:
-                service = "UNKNOWN SERVICE"
-            print(f"      {port}        OPEN       {service}")
-            print("-"*50)
-            print(Fore.LIGHTBLUE_EX)
-            print(" ---- Scan is completed ----\n")
-
-    elif choose == "2":
-        try:
-            value = int(input("Enter port range to scan (1 - 65535): "))
-            target = input("Enter the target: ")
-
-        except TypeError:
-            print("\n Error !!! Please enter the true value.")
-            sys.exit()
-
-        except KeyboardInterrupt:
-            print("\n KeyboardInterrupt Error")
-            print("Exitting Program !!!!")
-            sys.exit()
-
-        # Defining a target
-        # translate hostname to IPv4
-        target = socket.gethostbyname(target)
-        # Gets the current date
-        now = datetime.now()
-
-        # Add Banner
-        print(Fore.LIGHTGREEN_EX)
-        print("-"*50)
-        print("Scanning Target: " + target)
-        print("Scanning started at: " + str(now.strftime("%d/%m/%Y %H:%M:%S")))
-        print("-"*50)
-        print(Fore.LIGHTWHITE_EX)
-        print("      PORT      STATE      SERVICE")
-        print("-"*50)
-        try:
-            # will scan ports between 1 to 65.535
-            for port in range(1,value):
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                socket.setdefaulttimeout(0.1)
-                # Attempts to connect to target ports
-                result = s.connect_ex((target,port))
+def scan_ip_range(start_ip, end_ip, ports):
+    try:
+        def ip_to_int(ip):
+            return struct.unpack('!I', socket.inet_aton(ip))[0]
+        
+        def int_to_ip(ip_int):
+            return socket.inet_ntoa(struct.pack('!I', ip_int))
+        
+        start = ip_to_int(start_ip)
+        end = ip_to_int(end_ip)
+        
+        if start > end:
+            print("Start IP cannot be greater than end IP!")
+            return
+        
+        for ip_int in range(start, end + 1):
+            current_ip = int_to_ip(ip_int)
+            print(f"\nScanning: {current_ip}")
+            
+            # Port scanning process
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.1)
+            for port in ports:
+                result = sock.connect_ex((current_ip, port))
                 if result == 0:
-                    service = get_service(port)
+                    service = get_service(str(port))
                     if not service:
                         service = "UNKNOWN SERVICE"
                     print(f"      {port}        OPEN       {service}")
-                s.close()
-            print(Fore.LIGHTBLUE_EX)
-            print(" ---- Scan is completed ----\n")
-            print("-"*50)
-        # if uses Ctrl+C  etc. show this  
+            sock.close()
+
+    except Exception as e:
+        print(f"\nError: {str(e)}")
+        sys.exit(1)
+
+def ping_scan(target):
+    # Check if the IP address is valid
+    try:
+        socket.inet_aton(target)
+    except socket.error:
+        print("Invalid IP address!")
+        return False
+    try:
+        output = subprocess.check_output(
+            ['ping', '-n', '1', target] if os.name == 'nt' else ['ping', '-c', '1', target],
+            stderr=subprocess.STDOUT,
+            universal_newlines=True
+        )
+        if 'TTL=' in output or 'ttl=' in output:
+            return True
+    except:
+        pass
+    return False
+
+def udp_scan(target, ports, queue, progress_queue):
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(1)
+    except socket.error:
+        print("Could not create socket!")
+        return
+
+    for port in ports:
+        try:
+            sock.sendto(b'', (target, port))
+            try:
+                data, addr = sock.recvfrom(1024)
+                queue.put((port, "UDP OPEN"))
+            except socket.timeout:
+                # Port might be open if no response
+                queue.put((port, "UDP OPEN|FILTERED"))
+            progress_queue.put(1)
+        except:
+            progress_queue.put(1)
+    
+    sock.close()  # Close socket outside the loop
+
+scan_speeds = {
+    'Slow': {'timeout': 0.1, 'threads': 50},
+    'Normal': {'timeout': 0.05, 'threads': 100},
+    'Fast': {'timeout': 0.02, 'threads': 200},
+    'Very Fast': {'timeout': 0.01, 'threads': 300}
+}
+
+def set_scan_speed():
+    print("\nSelect Scan Speed:")
+    for i, speed in enumerate(scan_speeds.keys(), 1):
+        print(f"{i} - {speed}")
+    choice = input("Your choice: ")
+    return list(scan_speeds.values())[int(choice)-1]
+
+def export_results(results, format_type, target):
+    if not results:
+        print("No results to export!")
+        return None
+    if format_type == 'txt':
+        return save_results(target, results, datetime.now())
+    elif format_type == 'json':
+        data = {
+            'target': target,
+            'scan_time': str(datetime.now()),
+            'open_ports': [{
+                'port': port,
+                'service': service
+            } for port, service in results]
+        }
+        filename = f"scan_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=4)
+        return filename
+
+def check_for_updates():
+    current_version = "1.5"
+    try:
+        # Check for latest version from GitHub or other source
+        response = requests.get("https://api.github.com/repos/user/m-map/releases/latest")
+        latest_version = response.json()["tag_name"]
+        if latest_version > current_version:
+            print(f"New version available! Current: {current_version}, Latest: {latest_version}")
+    except:
+        pass
+
+def detect_os(target):
+    try:
+        nm = nmap.PortScanner()
+        result = nm.scan(target, arguments='-O')
+        
+        if 'osmatch' in result['scan'][target]:
+            os_matches = result['scan'][target]['osmatch']
+            if os_matches:
+                return os_matches[0]['name']
+        return "Operating system detection failed"
+    except Exception as e:
+        return f"OS detection error: {str(e)}"
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='M-MAP Port Scanner')
+    parser.add_argument('-t', '--target', help='Target IP address')
+    parser.add_argument('-p', '--port', help='Port number or port range (e.g., 80 or 20-100)')
+    parser.add_argument('-q', '--quick', action='store_true', help='Quick scan (top 20 ports)')
+    parser.add_argument('-o', '--output', help='Save results to file (txt or json)')
+    return parser.parse_args()
+
+def network_scan(subnet):
+    """Scans for active hosts in the specified subnet"""
+    print(f"\nStarting network scan: {subnet}")
+    active_hosts = []
+    
+    # Example: 192.168.1.0/24
+    base_ip = subnet.split('/')[0]
+    base_parts = base_ip.split('.')
+    
+    for i in range(1, 255):
+        ip = f"{base_parts[0]}.{base_parts[1]}.{base_parts[2]}.{i}"
+        if ping_scan(ip):
+            print(f"\rActive host found: {ip}")
+            active_hosts.append(ip)
+    
+    return active_hosts
+
+def export_html_report(results, target, scan_time):
+    filename = f"scan_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+    
+    html_content = f"""
+    <html>
+    <head>
+        <title>M-MAP Scan Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+            table {{ border-collapse: collapse; width: 100%; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+            .header {{ background-color: #4CAF50; color: white; padding: 20px; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>M-MAP Scan Report</h1>
+            <p>Target: {target}</p>
+            <p>Scan Time: {scan_time}</p>
+        </div>
+        <table>
+            <tr>
+                <th>Port</th>
+                <th>State</th>
+                <th>Service</th>
+            </tr>
+    """
+    
+    for port, service in sorted(results):
+        html_content += f"""
+            <tr>
+                <td>{port}</td>
+                <td>OPEN</td>
+                <td>{service}</td>
+            </tr>
+        """
+    
+    html_content += """
+        </table>
+    </body>
+    </html>
+    """
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    return filename
+
+def get_service(ports):
+    ports = str(ports)
+    if ports in common_ports:
+        return common_ports[ports]
+    else:
+        return 0
+
+def get_optimal_thread_count():
+    """Get optimal thread count based on CPU cores"""
+    return min(200, os.cpu_count() * 4)  # Maximum 200 threads
+
+if __name__ == "__main__":
+    args = parse_arguments()
+    
+    # If command-line arguments are provided, process them
+    if args.target:
+        target = args.target
+        if args.quick:
+            # Quick scan
+            choose = "3"
+        elif args.port:
+            if '-' in args.port:
+                # Port range scan
+                start_port, end_port = map(int, args.port.split('-'))
+                choose = "2"
+                value = end_port
+            else:
+                # Single port scan
+                choose = "1"
+                port = int(args.port)
+        
+        # Save results option
+        if args.output:
+            # Save results after scan
+            if args.output.endswith('.json'):
+                format_type = 'json'
+            else:
+                format_type = 'txt'
+    
+    # Main loop
+    while True:
+        # Add Banner
+        ascii_banner = pyfiglet.figlet_format("M - MAP")
+        print(Fore.LIGHTBLUE_EX)
+        print(ascii_banner)
+        print(Fore.LIGHTGREEN_EX)
+        print("M - MAP is an easy port scan tool")
+        print(Fore.LIGHTWHITE_EX)
+        # Get known services
+
+        choose_banner = '''
+        1 - Single Port Scan
+        2 - Multi Port Scan
+        3 - Quick Scan (Top 20 Ports)
+        4 - Aggressive Scan
+        5 - IP Range Scan
+        6 - Export Last Scan
+        7 - Scan Settings
+        8 - OS Detection
+        9 - UDP Port Scan
+        10 - Network Scan
+        11 - Help
+        12 - About
+        13 - Exit
+        '''
+        print(choose_banner)
+        try:
+            choose = input("Choose option: ")
+        
         except KeyboardInterrupt:
             print("\n Exitting Program !!!!")
             sys.exit(1)
-        # This shows your given hostname is invalid
-        except socket.gaierror:
-            print("\n Hostname Could Not Be Resolved !!!!")
-            sys.exit(1)
-        # if Server not responding show this
-        except socket.error:
-            print("\n Server not responding !!!!")
-            sys.exit(1)
+        
+        except TypeError:
+                print("\n Error !!! Please enter the true value.")
+                sys.exit(1)
 
-    elif choose == "3":
-        print("-"*50)
-        print("\n How to use program ?")
-        print("\n Program is easy to learn")
-        print("-"*50)
-        print("1 - Choose Option")
-        print("2 - Write your target ip")
-        print("3 - Write Port Range or Port number")
-        print("4 - Wait... :)")
-    
-    elif choose == "4":
-        print("-"*50)
-        print("M - MAP is an easy port scan tool")
-        print(" ")
-        print("Created by Melih Can")    
-        print("Version 1.5 Date 21/08/2021")
-        print("-"*50)
-        print("My E-mail: Melihcan1376@gmail.com")
-        print("-"*50)
-    
-    elif choose == "5":
-        os.system("cls")
-        sys.exit(1)
+        if choose == "1":  # Single Port Scan
+            ip = input("Enter IP Address: ")
+            port = int(input("Enter Port Number: "))
+            sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            print("-"*50)
+            if sock.connect_ex((ip,port)):
+                print(f"Port {port} closed")
+            else:
+                service = get_service(port)
+                if not service:
+                    service = "UNKNOWN SERVICE"
+                print(f"      {port}        OPEN       {service}")
+                print("-"*50)
+                print(Fore.LIGHTBLUE_EX)
+                print(" ---- Scan is completed ----\n")
 
-    else:
-        print("Choose Error! Please choose true option.")
-    
-    input()
+        elif choose == "2":  # Multi Port Scan
+            try:
+                value = int(input("Enter port range to scan (1 - 65535): "))
+                target = input("Enter the target: ")
+                thread_count = get_optimal_thread_count()
+
+                target = socket.gethostbyname(target)
+                now = datetime.now()
+
+                print(Fore.LIGHTGREEN_EX)
+                print("-"*50)
+                print("Scanning Target: " + target)
+                print("Scanning started at: " + str(now.strftime("%d/%m/%Y %H:%M:%S")))
+                print("-"*50)
+                print(Fore.LIGHTWHITE_EX)
+                print("      PORT      STATE      SERVICE")
+                print("-"*50)
+
+                queue = Queue()
+                progress_queue = Queue()  # Progress queue
+                threads = []
+                total_ports = value
+                scanned_ports = 0
+
+                # Group ports based on thread count
+                ports_per_thread = (value - 1) // thread_count + 1
+                for i in range(0, value - 1, ports_per_thread):
+                    port_group = range(i + 1, min(i + ports_per_thread + 1, value))
+                    thread = threading.Thread(target=scan_port, args=(target, port_group, queue, progress_queue))
+                    thread.daemon = True
+                    threads.append(thread)
+
+                # Start all threads
+                for thread in threads:
+                    thread.start()
+
+                # Show progress
+                while any(thread.is_alive() for thread in threads):
+                    while not progress_queue.empty():
+                        scanned_ports += progress_queue.get()
+                    progress = (scanned_ports / total_ports) * 100
+                    print(f"\rScan progress: %{progress:.1f} ({scanned_ports}/{total_ports} ports)", end="", flush=True)
+                    time.sleep(0.1)
+
+                # Get remaining progress
+                while not progress_queue.empty():
+                    scanned_ports += progress_queue.get()
+
+                # Show final progress
+                print(f"\rScan progress: %100.0 ({total_ports}/{total_ports} ports)")
+                print("\n")
+
+                # Print results in sorted order
+                results = []
+                while not queue.empty():
+                    results.append(queue.get())
+                
+                if results:
+                    for port, service in sorted(results):
+                        print(f"      {port}        OPEN       {service}")
+                else:
+                    print("No open ports found.")
+
+                print(Fore.LIGHTBLUE_EX)
+                print(" ---- Scan is completed ----\n")
+                print("-"*50)
+
+            except KeyboardInterrupt:
+                print("\n Exitting Program !!!!")
+                sys.exit(1)
+            except socket.gaierror:
+                print("\n Hostname Could Not Be Resolved !!!!")
+                sys.exit(1)
+            except socket.error:
+                print("\n Server not responding !!!!")
+                sys.exit(1)
+
+        elif choose == "3":  # Quick Scan
+            try:
+                target = input("Enter the target: ")
+                target = socket.gethostbyname(target)
+                now = datetime.now()
+
+                print(Fore.LIGHTGREEN_EX)
+                print("-"*50)
+                print("Quick Scanning Target: " + target)
+                print("Scanning started at: " + str(now.strftime("%d/%m/%Y %H:%M:%S")))
+                print("-"*50)
+                print(Fore.LIGHTWHITE_EX)
+                print("      PORT      STATE      SERVICE")
+                print("-"*50)
+
+                queue = Queue()
+                progress_queue = Queue()
+                threads = []
+                total_ports = len(quick_scan_ports)
+                scanned_ports = 0
+
+                # Scan top 20 ports
+                thread = threading.Thread(target=scan_port, args=(target, quick_scan_ports, queue, progress_queue))
+                thread.daemon = True
+                thread.start()
+
+                while thread.is_alive():
+                    while not progress_queue.empty():
+                        scanned_ports += progress_queue.get()
+                    progress = (scanned_ports / total_ports) * 100
+                    print(f"\rScan progress: %{progress:.1f} ({scanned_ports}/{total_ports} ports)", end="", flush=True)
+                    time.sleep(0.1)
+
+                thread.join()
+                print("\n")
+
+                results = []
+                while not queue.empty():
+                    results.append(queue.get())
+                
+                if results:
+                    for port, service in sorted(results):
+                        print(f"      {port}        OPEN       {service}")
+                else:
+                    print("No open ports found.")
+
+                print(Fore.LIGHTBLUE_EX)
+                print(" ---- Quick Scan Completed ----\n")
+                print("-"*50)
+
+            except Exception as e:
+                print(f"\nError: {str(e)}")
+                sys.exit(1)
+
+        elif choose == "4":  # Aggressive Scan
+            try:
+                target = input("Enter the target: ")
+                target = socket.gethostbyname(target)
+                
+                # First, check ping
+                if not ping_scan(target):
+                    print("Target is not responding!")
+                    continue
+
+                print("\nService version detection in progress...")
+                queue = Queue()
+                progress_queue = Queue()
+                
+                # Normal scan
+                thread = threading.Thread(target=scan_port, args=(target, range(1, 1001), queue, progress_queue))
+                thread.daemon = True
+                thread.start()
+                thread.join()
+
+                results = []
+                while not queue.empty():
+                    port, service = queue.get()
+                    # Get banner information
+                    banner = get_service_banner(target, port)
+                    if banner:
+                        service = f"{service} ({banner})"
+                    results.append((port, service))
+
+                if results:
+                    for port, service in sorted(results):
+                        print(f"      {port}        OPEN       {service}")
+                else:
+                    print("No open ports found.")
+
+            except Exception as e:
+                print(f"\nError: {str(e)}")
+                sys.exit(1)
+
+        elif choose == "5":  # IP Range Scan
+            try:
+                start_ip = input("Enter start IP address: ")
+                end_ip = input("Enter end IP address: ")
+                port = int(input("Enter port to scan (single port): "))
+                
+                scan_ip_range(start_ip, end_ip, [port])
+
+            except Exception as e:
+                print(f"\nError: {str(e)}")
+                sys.exit(1)
+
+        elif choose == "6":  # Export Last Scan
+            if 'results' not in locals():
+                print("No scan has been performed yet!")
+                continue
+
+            print("\nSelect export format:")
+            print("1 - TXT")
+            print("2 - JSON")
+            format_choice = input("Your choice: ")
+            
+            if format_choice == "1":
+                filename = export_results(results, 'txt', target)
+            elif format_choice == "2":
+                filename = export_results(results, 'json', target)
+            else:
+                print("Invalid choice!")
+                continue
+            
+            print(f"Results saved to {filename}")
+
+        elif choose == "7":  # Scan Settings
+            scan_config = set_scan_speed()
+            print(f"New scan settings: Timeout={scan_config['timeout']}, Threads={scan_config['threads']}")
+
+        elif choose == "8":  # OS Detection
+            try:
+                target = input("Enter the target IP: ")
+                print("\nDetecting operating system...")
+                os_info = detect_os(target)
+                print(f"\nDetected operating system: {os_info}")
+            except Exception as e:
+                print(f"\nError: {str(e)}")
+
+        elif choose == "9":  # UDP Port Scan
+            try:
+                target = input("Enter the target: ")
+                port_range = int(input("Enter port range to scan (1 - 65535): "))
+                
+                print("\nStarting UDP port scan...")
+                queue = Queue()
+                progress_queue = Queue()
+                
+                thread = threading.Thread(target=udp_scan, 
+                                       args=(target, range(1, port_range + 1), queue, progress_queue))
+                thread.daemon = True
+                thread.start()
+                thread.join()
+                
+                results = []
+                while not queue.empty():
+                    results.append(queue.get())
+                
+                if results:
+                    print("\nOpen UDP Ports:")
+                    for port, status in sorted(results):
+                        print(f"Port {port}: {status}")
+                else:
+                    print("No open UDP ports found.")
+                    
+            except Exception as e:
+                print(f"\nError: {str(e)}")
+
+        elif choose == "10":  # Network Scan
+            try:
+                subnet = input("Enter subnet (Example: 192.168.1.0/24): ")
+                active_hosts = network_scan(subnet)
+                
+                if active_hosts:
+                    print("\nActive Hosts:")
+                    for host in active_hosts:
+                        print(f"- {host}")
+                else:
+                    print("\nNo active hosts found.")
+                    
+            except Exception as e:
+                print(f"\nError: {str(e)}")
+
+        elif choose == "11":  # Help
+            print("-"*50)
+            print("\nHow to use?")
+            print("\n1 - Single Port Scan: Scans a single port")
+            print("2 - Multi Port Scan: Scans a range of ports")
+            print("3 - Quick Scan: Quickly scans top 20 common ports")
+            print("4 - Aggressive Scan: Detailed service detection")
+            print("5 - IP Range Scan: Scans IP range")
+            print("6 - Export Last Scan: Export scan results")
+            print("7 - Scan Settings: Configure scan settings")
+            print("8 - OS Detection: Detect operating system")
+            print("9 - UDP Port Scan: Scan UDP ports")
+            print("10 - Network Scan: Scan local network")
+
+        elif choose == "12":  # About
+            print("-"*50)
+            print("M - MAP is an easy port scan tool")
+            print(" ")
+            print("Created by Melih Can")    
+            print("Version 1.5 Date 21/08/2021")
+            print("-"*50)
+            print("My E-mail: Melihcan1376@gmail.com")
+            print("-"*50)
+            
+            # Check for updates
+            check_for_updates()
+
+        elif choose == "13":  # Exit
+            print("\nExiting program...")
+            sys.exit(0)
+
+        else:
+            print("Invalid choice! Please enter a valid option.")
+        
+        input()
